@@ -1,31 +1,41 @@
 #include "Func.h"
 
 Func::Func() {
-
+    mineCount = 0;
 }
 
 Func::~Func() {
 
 }
 
-void Func::placeMines(int __mCnt) {
+void Func::placeMines(const int __mCnt) {
     mineCount = __mCnt;
-
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> dis(0, SIZE - 1);
 
+    for (int z = 0; z < SIZE; z++) {
+        for (int x = 0; x < SIZE; x++) {
+            for (int y = 0; y < SIZE; y++) {
+                board[z][x][y].isMine = false;
+                board[z][x][y].stuckMines = 0;
+                board[z][x][y].status = 0;
+            }
+        }
+    }
 
-    while (__mCnt > 0) {
+    int placedMines = 0;
+    while (placedMines < mineCount) {
         int x = dis(gen);
         int y = dis(gen);
         int z = dis(gen);
 
         if (!board[z][x][y].isMine) {
             board[z][x][y].isMine = true;
-            __mCnt--;
+            placedMines++;
         }
     }
+
 }
 
 void Func::calcStuckMines() {
@@ -61,9 +71,11 @@ void Func::calcStuckMines() {
 
 }
 
-bool Func::openCell(int __z, int __x, int __y) {
+
+
+bool Func::openCell(const int __z, const int __x, const int __y) {
     try {
-        cell* thisCell = &board.at(__z).at(__y).at(__x);
+        thisCell = &board.at(__z).at(__y).at(__x);
 
         // 이미 열려있거나 깃발이 꽂힌 셀이면 아무 것도 하지 않음
         if (thisCell->status % 2) {
@@ -95,3 +107,14 @@ bool Func::openCell(int __z, int __x, int __y) {
 
 }
 
+void Func::setFlag(const int __z, const int __x, const int __y) {
+    thisCell = &board.at(__z).at(__y).at(__x);
+    if (thisCell->status == 0) thisCell->status++;
+    else if (thisCell->status == 1) thisCell->status++;
+    else if (thisCell->status == 2)thisCell->status = 0;
+}
+
+
+bool Func::isMineAt(const int __z, const int __x, const int __y) const {
+    return board[__z][__x][__y].isMine;
+}

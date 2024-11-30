@@ -6,6 +6,12 @@
 
 #include "Resource.h"
 
+struct mineCell
+{
+	bool isMine = false;
+	int stuckMines = 0;
+	int status = 0; // 0 = ´ÝÈû 1 = ±ê¹ß 2 = ? 3 = ¿­¸²
+};
 
 class Func
 {
@@ -13,22 +19,17 @@ public:
 	Func();
 	~Func();
 
-	static struct cell
-	{
-		bool isMine = false;
-		int stuckMines = 0;
-		int status = 0; // 0 = ´ÝÈû 1 = ±ê¹ß 2 = ? 3 = ¿­¸²
-	};
-	
-	std::array<std::array<std::array<cell, 9>, 9>, 9> board;
 
-	static int mineCount;
+	std::array<std::array<std::array<mineCell, 9>, 9>, 9> board;
+	mineCell* thisCell = nullptr;
+	int mineCount;
 
-	void placeMines(int __mCnt = 20);
+	void placeMines(const int __mCnt = 20);
 	void calcStuckMines();
-	bool openCell(int __z, int __x, int __y);
+	bool openCell(const int __z, const int __x, const int __y);
+	void setFlag(const int __z, const int __x, const int __y);
+	bool isMineAt(const int __z, const int __x, const int __y) const;
 private:
 	bool isOpen = false;
-
 };
 
