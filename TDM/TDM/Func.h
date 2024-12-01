@@ -24,11 +24,14 @@ public:
 	mineCell* thisCell = nullptr;
 	int mineCount;
 
-	void placeMines(const int __mCnt = 20);
+	void placeMines(const int __mCnt = 50);
 	void calcStuckMines();
 	bool openCell(const int __z, const int __x, const int __y);
 	void setFlag(const int __z, const int __x, const int __y);
 	bool isMineAt(const int __z, const int __x, const int __y) const;
+	void resetBoard();
+	bool safeFirstClick(const int __z, const int __x, const int __y);
+	void placeSingleMine(int excludeZ, int excludeX, int excludeY);
 private:
 	bool isOpen = false;
 };

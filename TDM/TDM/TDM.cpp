@@ -1,5 +1,4 @@
 ﻿// TDM.cpp : 애플리케이션에 대한 진입점을 정의합니다.
-//
 
 #include "framework.h"
 #include "TDM.h"
@@ -9,43 +8,38 @@
 #include <windowsx.h>
 #include <memory>
 #include <string>
-
-#define CELL_SIZE 30
-#define BOARD_SIZE 9
-#define LAYER_SIZE 3
-#define LAYER_SPACING (CELL_SIZE / 2)  // 레이어 간 간격
-#define WINDOW_WIDTH 900
-#define WINDOW_HEIGHT 900
+#include <array>
 
 #define MAX_LOADSTRING 100
+#define CELL_SIZE 30
+#define LAYER_GAP 15
 
 // 전역 변수:
 HINSTANCE hInst;                                // 현재 인스턴스입니다.
 WCHAR szTitle[MAX_LOADSTRING];                  // 제목 표시줄 텍스트입니다.
 WCHAR szWindowClass[MAX_LOADSTRING];            // 기본 창 클래스 이름입니다.
 
-// 이 코드 모듈에 포함된 함수의 선언을 전달합니다:
+std::unique_ptr<Func> gameFunc;
+std::array<std::array<std::array<RECT, SIZE>, SIZE>, SIZE> cellRect;
+int lastHighlightZ = -1, lastHighlightX = -1, lastHighlightY = -1;
+bool firstClick = true;
+
+// 함수 선언:
 ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
-
-std::unique_ptr<Func> gameLogic;
-void DrawBoard(HDC hdc);
-void HandleMouseMove(HWND hWnd, int x, int y);
-bool firstClick = true;
-POINT g_mousePos = { -1, -1 };
-POINT g_prevMousePos = { -1, -1 };
+void                InitializeCellRects();
+void                DrawBoard(HDC hdc);
+void                HighlightCells(HWND hWnd, int z, int x, int y);
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
-                     _In_opt_ HINSTANCE hPrevInstance,
-                     _In_ LPWSTR    lpCmdLine,
-                     _In_ int       nCmdShow)
+    _In_opt_ HINSTANCE hPrevInstance,
+    _In_ LPWSTR    lpCmdLine,
+    _In_ int       nCmdShow)
 {
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
-
-    // TODO: 여기에 코드를 입력합니다.
 
     // 전역 문자열을 초기화합니다.
     LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
@@ -53,7 +47,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     MyRegisterClass(hInstance);
 
     // 애플리케이션 초기화를 수행합니다:
-    if (!InitInstance (hInstance, nCmdShow))
+    if (!InitInstance(hInstance, nCmdShow))
     {
         return FALSE;
     }
@@ -72,182 +66,153 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         }
     }
 
-    return (int) msg.wParam;
+    return (int)msg.wParam;
 }
 
-
-
-//
-//  함수: MyRegisterClass()
-//
-//  용도: 창 클래스를 등록합니다.
-//
 ATOM MyRegisterClass(HINSTANCE hInstance)
 {
     WNDCLASSEXW wcex;
 
     wcex.cbSize = sizeof(WNDCLASSEX);
 
-    wcex.style          = CS_HREDRAW | CS_VREDRAW;
-    wcex.lpfnWndProc    = WndProc;
-    wcex.cbClsExtra     = 0;
-    wcex.cbWndExtra     = 0;
-    wcex.hInstance      = hInstance;
-    wcex.hIcon          = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_TDM));
-    wcex.hCursor        = LoadCursor(nullptr, IDC_ARROW);
-    wcex.hbrBackground  = (HBRUSH)(COLOR_WINDOW+1);
-    wcex.lpszMenuName   = MAKEINTRESOURCEW(IDC_TDM);
-    wcex.lpszClassName  = szWindowClass;
-    wcex.hIconSm        = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
+    wcex.style = CS_HREDRAW | CS_VREDRAW;
+    wcex.lpfnWndProc = WndProc;
+    wcex.cbClsExtra = 0;
+    wcex.cbWndExtra = 0;
+    wcex.hInstance = hInstance;
+    wcex.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_TDM));
+    wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wcex.lpszMenuName = MAKEINTRESOURCEW(IDC_TDM);
+    wcex.lpszClassName = szWindowClass;
+    wcex.hIconSm = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
 
     return RegisterClassExW(&wcex);
 }
 
-//
-//   함수: InitInstance(HINSTANCE, int)
-//
-//   용도: 인스턴스 핸들을 저장하고 주 창을 만듭니다.
-//
-//   주석:
-//
-//        이 함수를 통해 인스턴스 핸들을 전역 변수에 저장하고
-//        주 프로그램 창을 만든 다음 표시합니다.
-//
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 {
-   hInst = hInstance; // 인스턴스 핸들을 전역 변수에 저장합니다.
+    hInst = hInstance;
 
-   HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-      CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
+    int windowWidth = CELL_SIZE * SIZE * 3 + LAYER_GAP * 2 + 16;
+    int windowHeight = CELL_SIZE * SIZE * 3 + LAYER_GAP * 2 + 39;
 
-   if (!hWnd)
-   {
-      return FALSE;
-   }
+    HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, 0, windowWidth, windowHeight, nullptr, nullptr, hInstance, nullptr);
 
-   gameLogic = std::make_unique<Func>();
-   gameLogic->placeMines();
-   gameLogic->calcStuckMines();
+    if (!hWnd)
+    {
+        return FALSE;
+    }
 
+    gameFunc = std::make_unique<Func>();
+    gameFunc->placeMines();
+    gameFunc->calcStuckMines();
 
-   ShowWindow(hWnd, nCmdShow);
-   UpdateWindow(hWnd);
+    InitializeCellRects();
 
-   return TRUE;
+    ShowWindow(hWnd, nCmdShow);
+    UpdateWindow(hWnd);
+
+    return TRUE;
 }
 
-//
-//  함수: WndProc(HWND, UINT, WPARAM, LPARAM)
-//
-//  용도: 주 창의 메시지를 처리합니다.
-//
-//  WM_COMMAND  - 애플리케이션 메뉴를 처리합니다.
-//  WM_PAINT    - 주 창을 그립니다.
-//  WM_DESTROY  - 종료 메시지를 게시하고 반환합니다.
-//
-//
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
     {
-    case WM_CREATE:
+    case WM_COMMAND:
     {
-        RECT rc;
-        rc.left = 0;
-        rc.top = 0;
-        rc.right = WINDOW_WIDTH;
-        rc.bottom = WINDOW_HEIGHT;
-        AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, TRUE);
-        SetWindowPos(hWnd, NULL, 0, 0, rc.right - rc.left, rc.bottom - rc.top, SWP_NOZORDER | SWP_NOMOVE);
-        break;
+        int wmId = LOWORD(wParam);
+        switch (wmId)
+        {
+        case IDM_ABOUT:
+            DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
+            break;
+        case IDM_EXIT:
+            DestroyWindow(hWnd);
+            break;
+        default:
+            return DefWindowProc(hWnd, message, wParam, lParam);
+        }
     }
+    break;
     case WM_MOUSEMOVE:
     {
         int xPos = GET_X_LPARAM(lParam);
         int yPos = GET_Y_LPARAM(lParam);
-        HandleMouseMove(hWnd, xPos, yPos);
+        RECT clickedRect = { xPos, yPos, xPos + 1, yPos + 1 };
+        RECT intersection;
+
+        for (int z = 0; z < SIZE; z++) {
+            for (int x = 0; x < SIZE; x++) {
+                for (int y = 0; y < SIZE; y++) {
+                    if (IntersectRect(&intersection, &clickedRect, &cellRect[z][x][y])) {
+                        HighlightCells(hWnd, z, x, y);
+                        return 0;
+                    }
+                }
+            }
+        }
+        // 마우스가 셀 밖으로 나갔을 때
+        if (lastHighlightZ != -1) {
+            HighlightCells(hWnd, -1, -1, -1);
+        }
         break;
     }
-    case WM_LBUTTONDOWN:
-    case WM_RBUTTONDOWN:
+    case WM_PAINT:
     {
-        int xPos = LOWORD(lParam);
-        int yPos = HIWORD(lParam);
-        POINT pt = { xPos, yPos };
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hWnd, &ps);
+        DrawBoard(hdc);
+        EndPaint(hWnd, &ps);
+    }
+    break;
+    case WM_LBUTTONDOWN:
+    {
+        int xPos = GET_X_LPARAM(lParam);
+        int yPos = GET_Y_LPARAM(lParam);
+        RECT clickedRect = { xPos, yPos, xPos + 1, yPos + 1 };
+        RECT intersection;
 
-        for (int layer = 0; layer < 9; layer++)
-        {
-            int layerX = (layer % LAYER_SIZE) * (BOARD_SIZE * CELL_SIZE + LAYER_SPACING) + 30;
-            int layerY = (layer / LAYER_SIZE) * (BOARD_SIZE * CELL_SIZE + LAYER_SPACING) + 30;
-
-            for (int x = 0; x < BOARD_SIZE; x++)
-            {
-                for (int y = 0; y < BOARD_SIZE; y++)
-                {
-                    RECT cellRect = {
-                        layerX + x * CELL_SIZE,
-                        layerY + y * CELL_SIZE,
-                        layerX + (x + 1) * CELL_SIZE,
-                        layerY + (y + 1) * CELL_SIZE
-                    };
-
-                    if (PtInRect(&cellRect, pt))
-                    {
-                        if (message == WM_LBUTTONDOWN)
-                        {
-                            if (firstClick)
-                            {
-                                gameLogic->placeMines(20);
-                                gameLogic->calcStuckMines();
-                                firstClick = false;
-                            }
-
-                            if (gameLogic->openCell(layer, x, y))
-                            {
-                                MessageBoxW(hWnd, L"게임 오버!", L"3D 지뢰찾기", MB_OK);
-                                gameLogic = std::make_unique<Func>();
-                                firstClick = true;
-                            }
+        for (int z = 0; z < SIZE; z++) {
+            for (int x = 0; x < SIZE; x++) {
+                for (int y = 0; y < SIZE; y++) {
+                    if (IntersectRect(&intersection, &clickedRect, &cellRect[z][x][y])) {
+                        if (firstClick) {
+                            gameFunc->safeFirstClick(z, x, y);
+                            firstClick = false;
                         }
-                        else if (message == WM_RBUTTONDOWN)
-                        {
-                            gameLogic->setFlag(layer, x, y);
-                        }
-
+                        gameFunc->openCell(z, x, y);
                         InvalidateRect(hWnd, NULL, TRUE);
                         return 0;
                     }
                 }
             }
         }
-        break;
     }
-    case WM_COMMAND:
-        {
-            int wmId = LOWORD(wParam);
-            // 메뉴 선택을 구문 분석합니다:
-            switch (wmId)
-            {
-            case IDM_ABOUT:
-                DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
-                break;
-            case IDM_EXIT:
-                DestroyWindow(hWnd);
-                break;
-            default:
-                return DefWindowProc(hWnd, message, wParam, lParam);
+    break;
+    case WM_RBUTTONDOWN:
+    {
+        if (firstClick) break;
+        int xPos = GET_X_LPARAM(lParam);
+        int yPos = GET_Y_LPARAM(lParam);
+        RECT clickedRect = { xPos, yPos, xPos + 1, yPos + 1 };
+        RECT intersection;
+
+        for (int z = 0; z < SIZE; z++) {
+            for (int x = 0; x < SIZE; x++) {
+                for (int y = 0; y < SIZE; y++) {
+                    if (IntersectRect(&intersection, &clickedRect, &cellRect[z][x][y])) {
+                        gameFunc->setFlag(z, x, y);
+                        InvalidateRect(hWnd, NULL, TRUE);
+                        return 0;
+                    }
+                }
             }
         }
-        break;
-    case WM_PAINT:
-        {
-            PAINTSTRUCT ps;
-            HDC hdc = BeginPaint(hWnd, &ps);
-            // TODO: 여기에 hdc를 사용하는 그리기 코드를 추가합니다...
-            DrawBoard(hdc);
-            EndPaint(hWnd, &ps);
-        }
-        break;
+    }
+    break;
     case WM_DESTROY:
         PostQuitMessage(0);
         break;
@@ -257,7 +222,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     return 0;
 }
 
-// 정보 대화 상자의 메시지 처리기입니다.
 INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
     UNREFERENCED_PARAMETER(lParam);
@@ -277,135 +241,111 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
     return (INT_PTR)FALSE;
 }
 
-
-void DrawBoard(HDC hdc)
+void InitializeCellRects()
 {
-    for (int layer = 0; layer < 9; layer++)
-    {
-        int layerX = (layer % LAYER_SIZE) * (BOARD_SIZE * CELL_SIZE + LAYER_SPACING) + 30;
-        int layerY = (layer / LAYER_SIZE) * (BOARD_SIZE * CELL_SIZE + LAYER_SPACING) + 30;
-
-        for (int x = 0; x < BOARD_SIZE; x++)
-        {
-            for (int y = 0; y < BOARD_SIZE; y++)
-            {
-                mineCell& cell = gameLogic->board[layer][x][y];
-                RECT rect = {
-                    layerX + x * CELL_SIZE,
-                    layerY + y * CELL_SIZE,
-                    layerX + (x + 1) * CELL_SIZE,
-                    layerY + (y + 1) * CELL_SIZE
-                };
-
-                // 마우스가 현재 셀 또는 인접한 셀 위에 있는지 확인
-                bool isHighlighted = false;
-                for (int dx = -1; dx <= 1; dx++)
-                {
-                    for (int dy = -1; dy <= 1; dy++)
-                    {
-                        RECT adjacentRect = {
-                            layerX + (x + dx) * CELL_SIZE,
-                            layerY + (y + dy) * CELL_SIZE,
-                            layerX + (x + dx + 1) * CELL_SIZE,
-                            layerY + (y + dy + 1) * CELL_SIZE
-                        };
-                        if (PtInRect(&adjacentRect, g_mousePos))
-                        {
-                            isHighlighted = true;
-                            break;
-                        }
-                    }
-                    if (isHighlighted) break;
-                }
-
-                // 배경 칠하기
-                if (isHighlighted)
-                {
-                    HBRUSH hBrush = CreateSolidBrush(RGB(255, 255, 200));  // 연노랑
-                    FillRect(hdc, &rect, hBrush);
-                    DeleteObject(hBrush);
-                }
-                else if (firstClick || cell.status != 3) // 첫 클릭 전이거나 닫힌 셀
-                {
-                    HBRUSH hBrush = CreateSolidBrush(RGB(220, 220, 220));  // 밝은 회색
-                    FillRect(hdc, &rect, hBrush);
-                    DeleteObject(hBrush);
-                }
-                else // 열린 셀
-                {
-                    FillRect(hdc, &rect, (HBRUSH)GetStockObject(WHITE_BRUSH));
-                }
-
-                // 테두리 그리기
-                HPEN hPen = CreatePen(PS_SOLID, 1, RGB(128, 128, 128));
-                HPEN hOldPen = (HPEN)SelectObject(hdc, hPen);
-                HBRUSH hOldBrush = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
-                Rectangle(hdc, rect.left, rect.top, rect.right, rect.bottom);
-                SelectObject(hdc, hOldBrush);
-                SelectObject(hdc, hOldPen);
-                DeleteObject(hPen);
-
-                // 셀 내용 그리기
-                if (cell.status == 1) // 깃발
-                {
-                    DrawTextW(hdc, L"F", -1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-                }
-                else if (cell.status == 2) // 물음표
-                {
-                    DrawTextW(hdc, L"?", -1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-                }
-                else if (cell.status == 3) // 열린 셀
-                {
-                    if (cell.stuckMines > 0)
-                    {
-                        wchar_t text[2];
-                        _itow_s(cell.stuckMines, text, 10);
-                        DrawTextW(hdc, text, -1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-                    }
-                    else if (cell.isMine)
-                    {
-                        DrawTextW(hdc, L"X", -1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-                    }
-                }
+    for (int z = 0; z < SIZE; z++) {
+        for (int x = 0; x < SIZE; x++) {
+            for (int y = 0; y < SIZE; y++) {
+                int left = x * CELL_SIZE + (z % 3) * (SIZE * CELL_SIZE + LAYER_GAP);
+                int top = y * CELL_SIZE + (z / 3) * (SIZE * CELL_SIZE + LAYER_GAP);
+                cellRect[z][x][y] = { left, top, left + CELL_SIZE, top + CELL_SIZE };
             }
         }
     }
 }
 
-void HandleMouseMove(HWND hWnd, int x, int y)
+void DrawBoard(HDC hdc)
 {
-    g_prevMousePos = g_mousePos;
-    g_mousePos.x = x;
-    g_mousePos.y = y;
+    HBRUSH nullBrush = (HBRUSH)GetStockObject(NULL_BRUSH);
+    HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, nullBrush);
+    HBRUSH highlightBrush = CreateSolidBrush(RGB(255, 255, 224)); // 연노랑색
 
-    for (int layer = 0; layer < 9; layer++)
-    {
-        int layerX = (layer % LAYER_SIZE) * (BOARD_SIZE * CELL_SIZE + LAYER_SPACING) + 30;
-        int layerY = (layer / LAYER_SIZE) * (BOARD_SIZE * CELL_SIZE + LAYER_SPACING) + 30;
+    for (int z = 0; z < SIZE; z++) {
+        for (int x = 0; x < SIZE; x++) {
+            for (int y = 0; y < SIZE; y++) {
+                RECT rect = cellRect[z][x][y];
+                mineCell cell = gameFunc->board[z][y][x];
 
-        for (int cellX = 0; cellX < BOARD_SIZE; cellX++)
-        {
-            for (int cellY = 0; cellY < BOARD_SIZE; cellY++)
-            {
-                RECT cellRect = {
-                    layerX + cellX * CELL_SIZE,
-                    layerY + cellY * CELL_SIZE,
-                    layerX + (cellX + 1) * CELL_SIZE,
-                    layerY + (cellY + 1) * CELL_SIZE
-                };
+                // 하이라이트 영역 체크
+                bool isHighlight = (abs(z - lastHighlightZ) <= 1 && abs(x - lastHighlightX) <= 1 && abs(y - lastHighlightY) <= 1);
 
-                RECT highlightRect = {
-                    cellRect.left - CELL_SIZE,
-                    cellRect.top - CELL_SIZE,
-                    cellRect.right + CELL_SIZE,
-                    cellRect.bottom + CELL_SIZE
-                };
+                if (isHighlight && lastHighlightZ != -1 && cell.status != 3) {
+                    FillRect(hdc, &rect, highlightBrush);
+                }
+                else if (cell.status == 3) { // 열린 셀
+                    FillRect(hdc, &rect, (HBRUSH)GetStockObject(WHITE_BRUSH));
+                }
+                else { // 닫힌 셀, 깃발, 물음표
+                    FillRect(hdc, &rect, (HBRUSH)GetStockObject(GRAY_BRUSH));
+                }
 
-                if (PtInRect(&highlightRect, g_mousePos) || PtInRect(&highlightRect, g_prevMousePos))
-                {
-                    InvalidateRect(hWnd, &highlightRect, FALSE);
+                // 셀 내용 그리기
+                if (cell.status == 3 && cell.stuckMines > 0) {
+                    WCHAR buffer[2];
+                    wsprintf(buffer, L"%d", cell.stuckMines);
+                    DrawText(hdc, buffer, -1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+                }
+                else if (cell.status == 3 && cell.isMine) {
+                    DrawText(hdc, L"*", -1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+                }
+                else if (cell.status == 1) {
+                    DrawText(hdc, L"F", -1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+                }
+                else if (cell.status == 2) {
+                    DrawText(hdc, L"?", -1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+                }
+
+                // 셀 테두리 그리기
+                Rectangle(hdc, rect.left, rect.top, rect.right, rect.bottom);
+            }
+        }
+    }
+
+    SelectObject(hdc, oldBrush);
+    DeleteObject(nullBrush);
+    DeleteObject(highlightBrush);
+}
+
+void HighlightCells(HWND hWnd, int z, int x, int y)
+{
+    RECT updateRect = { 0 };
+
+    // 이전 하이라이트 영역 갱신
+    // 이전 하이라이트 영역 갱신
+    if (lastHighlightZ != -1) {
+        for (int dz = -1; dz <= 1; dz++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    int nz = lastHighlightZ + dz, nx = lastHighlightX + dx, ny = lastHighlightY + dy;
+                    if (nz >= 0 && nz < SIZE && nx >= 0 && nx < SIZE && ny >= 0 && ny < SIZE) {
+                        UnionRect(&updateRect, &updateRect, &cellRect[nz][nx][ny]);
+                    }
                 }
             }
         }
     }
+
+    // 새로운 하이라이트 영역 갱신
+    if (z != -1) {
+        for (int dz = -1; dz <= 1; dz++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    int nz = z + dz, nx = x + dx, ny = y + dy;
+                    if (nz >= 0 && nz < SIZE && nx >= 0 && nx < SIZE && ny >= 0 && ny < SIZE) {
+                        UnionRect(&updateRect, &updateRect, &cellRect[nz][nx][ny]);
+                    }
+                }
+            }
+        }
+    }
+
+    // 갱신 영역이 있으면 화면 갱신
+    if (updateRect.left < updateRect.right && updateRect.top < updateRect.bottom) {
+        InvalidateRect(hWnd, &updateRect, FALSE);
+    }
+
+    // 현재 하이라이트 위치 저장
+    lastHighlightZ = z;
+    lastHighlightX = x;
+    lastHighlightY = y;
 }
