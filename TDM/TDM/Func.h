@@ -31,8 +31,13 @@ public:
 	bool isMineAt(const int __z, const int __x, const int __y) const;
 	void resetBoard();
 	bool safeFirstClick(const int __z, const int __x, const int __y);
-	void placeSingleMine(int excludeZ, int excludeX, int excludeY);
+	void placeSingleMine(const int __z, const int __x, const int __y);
+	bool openStuckCells(const int __z, const int __x, const int __y);
+	bool getGameOverStatus() const { return isGameOver; }
+	void setGameOverStatus(bool status) { isGameOver = status; }
+	void restartGame();
 private:
 	bool isOpen = false;
+	bool isGameOver;
 };
 

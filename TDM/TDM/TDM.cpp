@@ -21,8 +21,10 @@ WCHAR szWindowClass[MAX_LOADSTRING];            // 기본 창 클래스 이름�
 
 std::unique_ptr<Func> gameFunc;
 std::array<std::array<std::array<RECT, SIZE>, SIZE>, SIZE> cellRect;
+RECT restartButtonRect = { 0 };
 int lastHighlightZ = -1, lastHighlightX = -1, lastHighlightY = -1;
 bool firstClick = true;
+void gameOverMSG(HWND hWnd);
 
 // 함수 선언:
 ATOM                MyRegisterClass(HINSTANCE hInstance);
@@ -121,6 +123,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
     {
+    case WM_CREATE: 
+    {
+        restartButtonRect = { 900, 10, 1010, 40 };
+
+        break;
+    }
     case WM_COMMAND:
     {
         int wmId = LOWORD(wParam);
@@ -160,20 +168,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         }
         break;
     }
-    case WM_PAINT:
-    {
-        PAINTSTRUCT ps;
-        HDC hdc = BeginPaint(hWnd, &ps);
-        DrawBoard(hdc);
-        EndPaint(hWnd, &ps);
-    }
-    break;
     case WM_LBUTTONDOWN:
     {
         int xPos = GET_X_LPARAM(lParam);
         int yPos = GET_Y_LPARAM(lParam);
         RECT clickedRect = { xPos, yPos, xPos + 1, yPos + 1 };
         RECT intersection;
+
+        if (IntersectRect(&intersection, &clickedRect, &restartButtonRect)) {
+            gameFunc->restartGame();
+            InvalidateRect(hWnd, NULL, TRUE);
+            return 0;
+        }
 
         for (int z = 0; z < SIZE; z++) {
             for (int x = 0; x < SIZE; x++) {
@@ -183,7 +189,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                             gameFunc->safeFirstClick(z, x, y);
                             firstClick = false;
                         }
-                        gameFunc->openCell(z, x, y);
+                        if (gameFunc->openCell(z, x, y)) {
+                            gameFunc->setGameOverStatus(true);
+                            InvalidateRect(hWnd, NULL, TRUE);
+                            gameOverMSG(hWnd);
+                            return 0;
+                        }
                         InvalidateRect(hWnd, NULL, TRUE);
                         return 0;
                     }
@@ -211,6 +222,46 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 }
             }
         }
+    }
+    break;
+    case WM_MBUTTONDOWN:
+    {
+        if (firstClick) break;
+        int xPos = GET_X_LPARAM(lParam);
+        int yPos = GET_Y_LPARAM(lParam);
+        RECT clickedRect = { xPos, yPos, xPos + 1, yPos + 1 };
+        RECT intersection;
+
+        for (int z = 0; z < SIZE; z++) {
+            for (int x = 0; x < SIZE; x++) {
+                for (int y = 0; y < SIZE; y++) {
+                    if (IntersectRect(&intersection, &clickedRect, &cellRect[z][x][y])) {
+                        if (gameFunc->openStuckCells(z, x, y)) {
+                            gameFunc->setGameOverStatus(true);
+                            InvalidateRect(hWnd, NULL, TRUE);
+                            gameOverMSG(hWnd);
+                            return 0;
+                        }
+                        InvalidateRect(hWnd, NULL, TRUE);
+                        return 0;
+                    }
+                }
+            }
+        }
+        break;
+    }
+    case WM_PAINT:
+    {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hWnd, &ps);
+        
+        DrawBoard(hdc);
+
+        Rectangle(hdc, restartButtonRect.left, restartButtonRect.top, restartButtonRect.right, restartButtonRect.bottom);
+        SetTextColor(hdc, RGB(0, 0, 0));
+        TextOut(hdc, restartButtonRect.left + 25, restartButtonRect.top + 5, L"재시작", 3);
+
+        EndPaint(hWnd, &ps);
     }
     break;
     case WM_DESTROY:
@@ -258,7 +309,7 @@ void DrawBoard(HDC hdc)
 {
     HBRUSH nullBrush = (HBRUSH)GetStockObject(NULL_BRUSH);
     HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, nullBrush);
-    HBRUSH highlightBrush = CreateSolidBrush(RGB(255, 255, 224)); // 연노랑색
+    HBRUSH highlightBrush = CreateSolidBrush(RGB(224, 255, 224)); // 연노랑색
 
     for (int z = 0; z < SIZE; z++) {
         for (int x = 0; x < SIZE; x++) {
@@ -348,4 +399,12 @@ void HighlightCells(HWND hWnd, int z, int x, int y)
     lastHighlightZ = z;
     lastHighlightX = x;
     lastHighlightY = y;
+}
+
+void gameOverMSG(HWND hWnd) {
+    int result = MessageBox(hWnd, L"게임 오버! 다시 시작하시겠습니까?", L"게임 오버", MB_YESNO | MB_ICONQUESTION);
+    if (result == IDYES) {
+        gameFunc->restartGame();
+        InvalidateRect(hWnd, NULL, TRUE);
+    }
 }

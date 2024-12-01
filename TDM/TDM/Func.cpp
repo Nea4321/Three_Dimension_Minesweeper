@@ -159,7 +159,7 @@ bool Func::safeFirstClick(const int __z, const int __x, const int __y) {
 }
 
 // 새로운 함수: 단일 지뢰 배치
-void Func::placeSingleMine(int excludeZ, int excludeX, int excludeY) {
+void Func::placeSingleMine(const int __z, const int __x, const int __y) {
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> dis(0, SIZE - 1);
@@ -170,11 +170,65 @@ void Func::placeSingleMine(int excludeZ, int excludeX, int excludeY) {
         int y = dis(gen);
 
         // 원래 위치와 그 주변을 제외하고 지뢰 배치
-        if (abs(z - excludeZ) > 1 || abs(x - excludeX) > 1 || abs(y - excludeY) > 1) {
+        if (abs(z - __z) > 1 || abs(x - __x) > 1 || abs(y - __y) > 1) {
             if (!board[z][x][y].isMine) {
                 board[z][x][y].isMine = true;
                 break;
             }
         }
     }
+}
+
+bool Func::openStuckCells(const int __z, const int __x, const int __y) {
+    try {
+        mineCell* cell = &board.at(__z).at(__y).at(__x);
+        if (cell->status != 3) return false; // 열린 셀이 아니면 아무 것도 하지 않음
+
+        int flagCount = 0;
+        bool mineExploded = false;
+
+        // 주변 셀의 플래그 수 계산 및 닫힌 셀 열기
+        for (int dz = -1; dz <= 1; dz++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    if (dz == 0 && dx == 0 && dy == 0) continue;
+
+                    try {
+                        mineCell* stuckCell = &board.at(__z + dz).at(__y + dy).at(__x + dx);
+                        if (stuckCell->status == 1) { // 플래그가 있는 경우
+                            flagCount++;
+                        }
+                    }
+                    catch (const std::out_of_range&) {}
+                }
+            }
+        }
+
+
+
+
+        if (cell->stuckMines == flagCount) {
+            // stuckMines와 플래그 수가 같으면 열기
+            for (int dz = -1; dz <= 1; dz++) {
+                for (int dx = -1; dx <= 1; dx++) {
+                    for (int dy = -1; dy <= 1; dy++) {
+                        if (openCell(__z + dz, __x + dx, __y + dy)) {
+                            mineExploded = true; // 지뢰를 열었을 경우
+                        }
+                    }
+                }
+            }
+        }
+
+        return mineExploded;
+    }
+    catch (const std::out_of_range&) {
+        return false;
+    }
+}
+
+
+void Func::restartGame() {
+    isGameOver = false;
+    resetBoard();
 }
